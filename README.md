@@ -2,94 +2,177 @@
 
 ## Configuração de SSH e UFW no Ubuntu 24.04
 
-Este documento apresenta os comandos utilizados para instalar e configurar o SSH e o UFW em um container Ubuntu 24.04 usando Docker.
+Este documento apresenta os passos para configurar o acesso remoto por SSH e o firewall UFW em um container Ubuntu 24.04 utilizando Docker.
 
 ### 1. Criar o container
-No terminal, execute:
+No terminal do Ubuntu, crie o container com o seguinte comando:
+
 ```bash
-docker run -d --name ubuntu2404 -p 2222:22 ubuntu:24.04 bash -c "tail -f /dev/null"
+docker run -d --name ubuntu2404 -p 2222:22 --privileged ubuntu:24.04 bash -c "tail -f /dev/null"
 ```
 
-Para acessar o container:
+O comando cria um container chamado `ubuntu2404` usando a imagem do Ubuntu 24.04. A opção `-p 2222:22` permite acessar, pela porta 2222 do computador, a porta 22 do container. A opção `--privileged` garante que o firewall UFW tenha as permissões necessárias para funcionar no Docker.
+
+### 2. Acessar o container
+**Onde executar:** terminal do Ubuntu, fora do container.
+
 ```bash
 docker exec -it ubuntu2404 /bin/bash
 ```
 
-### 2. Instalar os pacotes
-Atualize a lista de pacotes e instale os programas necessários:
+Após executar o comando, o terminal estará dentro do container. Os próximos comandos desta documentação devem ser executados nele, até que seja indicado o contrário.
+
+### 3. Instalar os pacotes necessários
+**Ainda dentro do container:** Primeiro, atualize a lista de pacotes disponíveis:
+
 ```bash
 apt update
+```
+
+Em seguida, instale os programas necessários:
+
+```bash
 apt install openssh-server openssh-client ufw nano sudo iproute2 -y
 ```
 
-### 3. Criar o usuário
-Crie o usuário `gcsi`, defina uma senha e adicione-o ao grupo sudo:
+Os pacotes instalados são:
+- `openssh-server`: permite que o container receba conexões SSH.
+- `openssh-client`: permite iniciar conexões SSH com outros computadores ou containers.
+- `ufw`: ferramenta para configurar regras de firewall.
+- `nano`: editor de texto usado para editar arquivos de configuração.
+- `sudo`: permite executar comandos com privilégios administrativos quando configurado.
+- `iproute2`: disponibiliza ferramentas para consultar e administrar informações de rede.
+
+A opção `-y` confirma automaticamente a instalação dos pacotes.
+
+> **Observação:** No meio da instalação do SSH, o sistema pedirá a área geográfica. Selecione `2. America` e, para a região, aperte Enter para rolar a lista e selecione o número da que mais se aproxima da sua (ex: `135. Sao_paulo`).
+
+### 4. Criar o usuário
+Crie o usuário `gcsi`:
+
 ```bash
 useradd -m gcsi
+```
+
+Defina a senha do usuário:
+
+```bash
 passwd gcsi
+```
+
+Adicione o usuário ao grupo sudo:
+
+```bash
 usermod -aG sudo gcsi
+```
+
+Defina o Bash como shell do usuário:
+
+```bash
 chsh -s /bin/bash gcsi
 ```
 
-### 4. Configurar o SSH
-Abra o arquivo de configuração:
+### 5. Configurar o SSH
+Abra o arquivo de configuração do SSH:
+
 ```bash
 nano /etc/ssh/sshd_config
 ```
-Verifique as seguintes opções:
+
+Verifique se a opção abaixo está configurada desta forma:
+
 ```text
 PermitRootLogin yes
 PasswordAuthentication yes
 ```
-Salve o arquivo e execute:
+
+Salve o arquivo e feche o editor. Crie o diretório necessário:
+
+```bash
+mkdir -p /run/sshd
+```
+
+Verifique se a configuração apresenta erros:
+
 ```bash
 /usr/sbin/sshd -t
-mkdir -p /run/sshd
+```
+
+Se nenhum erro for exibido, execute:
+
+```bash
 service ssh start
 service ssh status
 ```
 
-### 5. Configurar o UFW
-Execute os comandos para definir as regras do firewall e liberar a porta do SSH:
+O último comando permite verificar se o serviço SSH está em execução.
+
+### 6. Configurar o firewall UFW
+Defina as regras iniciais:
+
 ```bash
 ufw default deny incoming
 ufw default allow outgoing
+```
+
+Esses comandos bloqueiam conexões de entrada por padrão e permitem conexões de saída. Libere a porta utilizada pelo SSH:
+
+```bash
 ufw allow 22/tcp
+```
+
+Ative o firewall:
+
+```bash
 ufw enable
+```
+
+Para consultar as regras:
+
+```bash
 ufw status verbose
 ```
-Confirme a ativação quando solicitado.
 
-> **Observação:** O UFW dentro de um container Docker pode apresentar limitações, pois o Docker também controla as regras de rede (através do iptables). É necessário verificar se as regras foram aplicadas corretamente na prática.
+> **Observação:** O funcionamento do UFW dentro de um container depende das permissões e da configuração de rede do Docker. A execução desses comandos não garante, por si só, que o acesso publicado pelo Docker esteja protegido pelas regras do UFW (por isso usamos a flag `--privileged` na criação).
 
-### 6. Testar a conexão SSH
-Abra outro terminal no computador e execute:
+### 7. Testar o acesso remoto
+Abra outro terminal do Ubuntu, fora do container. Execute:
+
 ```bash
 ssh -p 2222 gcsi@127.0.0.1
 ```
-Informe a senha do usuário `gcsi`. Após conectar, execute:
+
+Informe a senha criada para o usuário `gcsi`. Na primeira conexão, pode ser necessário confirmar a chave do servidor. Após conectar, execute:
+
 ```bash
 whoami
 hostname
 ```
-Para encerrar a conexão:
+
+O primeiro comando deve mostrar `gcsi`. O segundo mostra o nome do container ao qual você se conectou. Para encerrar a conexão SSH:
+
 ```bash
 exit
 ```
 
-### 7. Verificar os serviços
-Para verificar se o container está em execução:
+### 8. Verificar a configuração
+Verifique se o container está em execução:
+
 ```bash
 docker ps
 ```
-Para verificar o SSH:
+
+Consulte o estado do SSH:
+
 ```bash
 docker exec -it ubuntu2404 service ssh status
 ```
-Para verificar o UFW:
+
+Consulte o estado do UFW:
+
 ```bash
 docker exec -it ubuntu2404 ufw status verbose
 ```
 
 ### Resultado
-Foram apresentados os procedimentos para criar o container, instalar os pacotes, criar o usuário, configurar o SSH e definir as regras do UFW. A conexão SSH pode ser testada pela porta 2222 do computador anfitrião. O funcionamento do firewall deve ser verificado considerando as limitações da manipulação de rede do Docker.
+Ao final, o container terá os pacotes necessários instalados, o usuário `gcsi` criado e o serviço SSH configurado. O acesso remoto poderá ser testado pela porta 2222 do computador. O estado do UFW deve ser conferido no ambiente utilizado, considerando as limitações de rede dos containers Docker.
